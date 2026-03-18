@@ -3,6 +3,7 @@ from datetime import date
 from bs4 import BeautifulSoup
 from dataclasses import dataclass, astuple
 from pynput import keyboard
+import pyperclip
 
 
 # TODO: Add logic for department according to institution. 
@@ -18,6 +19,7 @@ def on_ctrl_v():
     try:
         data_list = list(project_data)
         print(data_list[data_index])
+        pyperclip.copy(data_list[data_index])
         data_index = (data_index + 1) % 6
     except Exception as e:
         print(f"Error in on_ctrl_v: {e}")
@@ -77,7 +79,9 @@ class Handler(BaseHTTPRequestHandler):
 
             global project_data, data_index
             project_data = Project(proposal_id, pi_name, pi_department, sponsor_text, target_date, submission_deadline)
-            data_index = 0  # reset so ctrl+v starts from pid on each new page
+            data_index = 0 
+            pyperclip.copy(list(project_data)[0])
+            data_index = 1  # already loaded index 0 so start at 1 
             self.print_data(project_data)
 
         except Exception as e:
