@@ -1,14 +1,21 @@
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import date
 from bs4 import BeautifulSoup
-from dataclasses import dataclass
+from dataclasses import dataclass, astuple
 from pynput import keyboard
 
 
 # TODO: Add logic for department according to institution. 
 
+project_data = None 
+
+data_index = 0
 def on_ctrl_v():
-    print("Ctrl+V Pressed")
+    global project_data, data_index
+    pid, name, dept, sponsor, target, deadline = project_data
+    data_list = [pid, name, dept, sponsor, target, deadline]
+    print(data_list[data_index])
+    data_index = (data_index + 1) % 6
 
 hotkeys = keyboard.GlobalHotKeys({'<ctrl>+v': on_ctrl_v})
 hotkeys.start()
@@ -22,6 +29,9 @@ class Project:
     target_date: str 
     submission_deadline: str 
 
+    def __iter__(self):
+        return iter(astuple(self))
+
 class Handler(BaseHTTPRequestHandler):
     def print_data(self, p):
         print("Cleaned Data:")
@@ -34,8 +44,6 @@ class Handler(BaseHTTPRequestHandler):
               +"\t"+p.submission_deadline
               )
         return
-
-    # def copy_to_clipboard_sequentially(self, data):
 
     def parse_html(self, html_data):
         soup = BeautifulSoup(html_data, features="lxml")
@@ -64,7 +72,8 @@ class Handler(BaseHTTPRequestHandler):
         select = soup.find("select", {"id": "pi_center_id"})
         selected = select.find("option", {"selected": True})
         center = selected.text.strip() if selected else "none selected"
-
+        
+        global project_data 
         project_data = Project(proposal_id, pi_name, pi_department, sponsor_text, target_date, submission_deadline)
 
         self.print_data(project_data)
