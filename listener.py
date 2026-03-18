@@ -1,22 +1,34 @@
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import date
 from bs4 import BeautifulSoup
+from dataclasses import dataclass
 
 
 # TODO: Add logic for department according to institution. 
 
+@dataclass
+class Project:
+    pid: str 
+    pi_name: str 
+    pi_department: str 
+    sponsor: str 
+    target_date: str 
+    submission_deadline: str 
+
 class Handler(BaseHTTPRequestHandler):
-    def print_data(self, pid, pi_name, pi_department, sponsor, target_date, submission_deadline):
+    def print_data(self, p):
         print("Cleaned Data:")
         print(date.today().strftime("%m/%d/%Y")
-              +"\t"+pid
-              +"\t"+pi_name
-              +"\t"+pi_department
-              +"\t"+sponsor
-              +"\t"+target_date
-              +"\t"+submission_deadline
+              +"\t"+p.pid
+              +"\t"+p.pi_name
+              +"\t"+p.pi_department
+              +"\t"+p.sponsor
+              +"\t"+p.target_date
+              +"\t"+p.submission_deadline
               )
         return
+
+    # def copy_to_clipboard_sequentially(self, data):
 
 
     def parse_html(self, html_data):
@@ -47,7 +59,9 @@ class Handler(BaseHTTPRequestHandler):
         selected = select.find("option", {"selected": True})
         center = selected.text.strip() if selected else "none selected"
 
-        self.print_data(proposal_id, pi_name, pi_department, sponsor_text, target_date, submission_deadline)
+        project_data = Project(proposal_id, pi_name, pi_department, sponsor_text, target_date, submission_deadline)
+
+        self.print_data(project_data)
 
     def do_POST(self):
         length = int(self.headers['Content-Length'])
