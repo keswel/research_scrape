@@ -5,8 +5,9 @@
 
 1. clone the repo.
 2. install tampermonkey.
-3. create tampermonkey script with this code. 
-`
+3. create tampermonkey script with this code.
+
+```
 // ==UserScript==
 // @name         HTML to Terminal
 // @match        *://*/*
@@ -19,8 +20,8 @@ fetch("http://localhost:3000", {
   headers: { "Content-Type": "text/plain" }
 });
 
+``` 
 
-`
 
 4. run listener.py 
 5. done!
