@@ -2,9 +2,16 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import date
 from bs4 import BeautifulSoup
 from dataclasses import dataclass
+from pynput import keyboard
 
 
 # TODO: Add logic for department according to institution. 
+
+def on_ctrl_v():
+    print("Ctrl+V Pressed")
+
+hotkeys = keyboard.GlobalHotKeys({'<ctrl>+v': on_ctrl_v})
+hotkeys.start()
 
 @dataclass
 class Project:
@@ -29,7 +36,6 @@ class Handler(BaseHTTPRequestHandler):
         return
 
     # def copy_to_clipboard_sequentially(self, data):
-
 
     def parse_html(self, html_data):
         soup = BeautifulSoup(html_data, features="lxml")
