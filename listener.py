@@ -1,6 +1,6 @@
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import date
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, SoupStrainer
 from dataclasses import dataclass, astuple
 from pynput import keyboard
 import pyperclip
@@ -54,14 +54,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def parse_html(self, html_data):
         try:
-            soup = BeautifulSoup(html_data, features="lxml")
-            
-            if not soup.title or soup.title.text.strip() != "UTSA Office of Sponsored Project Administration":
-                return 
-            
-            heading = soup.find("div", {"class": "heading-block"})
-            if not (heading and "Notice of Intent" in heading.find("h3").text):
-                return
+            #strainer = SoupStrainer(["title", "span", "input", "a", "select", "div", "h3"])
+            strainer = SoupStrainer(id="intake-tab")
+            soup = BeautifulSoup(html_data, features="lxml", parse_only=strainer)
 
             proposal_id = soup.find("span", {"class": "text-primary"}).text.strip()
             pi_first_name = soup.find("input", {"id": "pi_first_name"})["value"].strip()
