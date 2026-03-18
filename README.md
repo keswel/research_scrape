@@ -4,8 +4,10 @@
 # how to use
 
 1. clone the repo.
-2. install tampermonkey.
-3. create tampermonkey script with this code.
+2. install dependancies
+   `pip install -r requirements.txt`
+4. install tampermonkey.
+5. create tampermonkey script with this code.
 
 ```
 // ==UserScript==
