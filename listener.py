@@ -18,6 +18,9 @@ _type_busy = False
 _ui_root = None
 _ui_popup = None
 
+# tracks if data has been scraped and is ready for pasting
+_buffer_full = False
+
 
 def _get_cursor_pos():
     class POINT(ctypes.Structure):
@@ -149,7 +152,7 @@ def type_row_strict_tabs():
     Simulate genuine Tab key presses (no inserted whitespace).
     Start with focus on column A of the target row. Hotkey: Ctrl+Alt+V
     """
-    global _type_busy
+    global _type_busy, _buffer_full, project_data
     # prevent re-entry
     with _listener_lock:
         if _type_busy:
@@ -161,7 +164,11 @@ def type_row_strict_tabs():
         kbd = keyboard.Controller()
         if _ui_popup:
             _ui_popup.show("Scraping...")
-
+        # reset buffer after paste starts
+        _buffer_full = False
+        project_data = None
+        if _ui_popup and _ui_popup._visible:
+            _ui_popup.update_text("Awaiting data…")
         # ensure Alt isn't held (prevents Alt+Tab when we send Tabs)
         try:
             for ak in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r):
@@ -252,7 +259,7 @@ def type_row_strict_tabs():
             pyperclip.copy(old_clip)
 
         if _ui_popup:
-            _ui_popup.update_text("✅ Done!")
+            _ui_popup.update_text("Done!")
 
         print("Typed row using real Tabs and preserved column K.")
     except Exception as e:
@@ -272,7 +279,10 @@ def _on_press(key):
         if key == keyboard.Key.ctrl_l:
             # show the overlay when Left Ctrl is held (UI only, no action)
             if _ui_popup:
-                _ui_popup.show("Hold Right Ctrl to paste…")
+                if _buffer_full:
+                    _ui_popup.show("Hold Right Ctrl to paste…")
+                else:
+                    _ui_popup.show("Awaiting data…")
             ctrl_keys_pressed.add(key)
         elif key == keyboard.Key.ctrl_r:
             ctrl_keys_pressed.add(key)
@@ -373,6 +383,11 @@ class Handler(BaseHTTPRequestHandler):
             # pyperclip.copy(list(project_data)[0])
             self.print_data(project_data)
             serve_data_to_clipboard()
+            # update UI if visible
+            global _buffer_full
+            _buffer_full = True
+            if _ui_popup and _ui_popup._visible:
+                _ui_popup.update_text("Hold Right Ctrl to paste…")
 
         except Exception as e:
             print(f"Error parsing HTML: {e}")
