@@ -6,14 +6,94 @@ from pynput import keyboard
 import pyperclip
 import time
 import threading
+import ctypes
+import tkinter as tk
 
 
-# TODO: Add logic for department according to institution. 
-
-project_data = None 
 # guard to prevent re-entrant typing runs
 _listener_lock = threading.Lock()
 _type_busy = False
+
+# UI overlay that follows the cursor while Ctrl is held
+_ui_root = None
+_ui_popup = None
+
+
+def _get_cursor_pos():
+    class POINT(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+    pt = POINT()
+    ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+    return pt.x, pt.y
+
+
+class _PopupOverlay:
+    def __init__(self, root):
+        self.root = root
+        self.window = tk.Toplevel(root)
+        self.window.withdraw()
+        self.window.overrideredirect(True)
+        self.window.attributes("-topmost", True)
+        self.window.attributes("-alpha", 0.88)
+        self.label = tk.Label(
+            self.window,
+            text="",
+            bg="black",
+            fg="white",
+            padx=10,
+            pady=4,
+            font=("Segoe UI", 10, "bold"),
+        )
+        self.label.pack()
+        self._visible = False
+
+    def _move_to_cursor(self):
+        x, y = _get_cursor_pos()
+        # place slightly above and to the right of the cursor
+        self.window.geometry(f"+{x+10}+{y-30}")
+
+    def show(self, text="Scraping..."):
+        def _show():
+            self.label.config(text=text)
+            self._move_to_cursor()
+            self.window.deiconify()
+            self._visible = True
+
+        self.root.after(0, _show)
+
+    def update_text(self, text):
+        def _update():
+            self.label.config(text=text)
+
+        self.root.after(0, _update)
+
+    def hide(self):
+        def _hide():
+            if self._visible:
+                self.window.withdraw()
+                self._visible = False
+
+        self.root.after(0, _hide)
+
+
+_ui_ready = threading.Event()
+
+
+def _ui_thread_main():
+    global _ui_root, _ui_popup
+    _ui_root = tk.Tk()
+    _ui_root.withdraw()
+    _ui_popup = _PopupOverlay(_ui_root)
+    _ui_ready.set()
+    _ui_root.mainloop()
+
+
+def _start_ui():
+    # start the Tk UI in a dedicated thread. Other threads can safely request
+    # UI updates via `after` once _ui_ready is set.
+    threading.Thread(target=_ui_thread_main, daemon=True).start()
+    _ui_ready.wait(timeout=3)
 
 def serve_data_to_clipboard():
     """
@@ -50,7 +130,6 @@ def serve_data_to_clipboard():
         # ensure we have at least 10 columns (previous layout) before adding extra gaps
         while len(cols) < 10:
             cols.append("")
-        # user requested 6 more empty tabs between target_date and submission_deadline
         cols.extend([""] * 6)
         # append submission_deadline after the added empty columns
         # If submission_deadline is the same as target_date, leave it blank
@@ -80,6 +159,8 @@ def type_row_strict_tabs():
     try:
         p = project_data
         kbd = keyboard.Controller()
+        if _ui_popup:
+            _ui_popup.show("Scraping...")
 
         # ensure Alt isn't held (prevents Alt+Tab when we send Tabs)
         try:
@@ -170,6 +251,9 @@ def type_row_strict_tabs():
         if old_clip is not None:
             pyperclip.copy(old_clip)
 
+        if _ui_popup:
+            _ui_popup.update_text("✅ Done!")
+
         print("Typed row using real Tabs and preserved column K.")
     except Exception as e:
         print(f"Error typing/restoring row: {e}")
@@ -177,33 +261,51 @@ def type_row_strict_tabs():
         with _listener_lock:
             _type_busy = False
 
-# Start a listener that triggers `type_row_strict_tabs` when left+right Ctrl
-# are pressed simultaneously. The listener will only trigger once per press
-# (holding the keys won't retrigger until released).
+# start a listener that triggers `type_row_strict_tabs` when both Ctrl keys are pressed.
+# the listener will only trigger once per press (holding the keys won't retrigger until released).
 ctrl_keys_pressed = set()
 ctrl_triggered = False
 
 def _on_press(key):
     global ctrl_triggered
     try:
-        if key == keyboard.Key.ctrl_l or key == keyboard.Key.ctrl_r:
+        if key == keyboard.Key.ctrl_l:
+            # show the overlay when Left Ctrl is held (UI only, no action)
+            if _ui_popup:
+                _ui_popup.show("Hold Right Ctrl to paste…")
+            ctrl_keys_pressed.add(key)
+        elif key == keyboard.Key.ctrl_r:
             ctrl_keys_pressed.add(key)
     except Exception:
         return
+
+    # only perform the paste action when both Ctrl keys are held.
     if keyboard.Key.ctrl_l in ctrl_keys_pressed and keyboard.Key.ctrl_r in ctrl_keys_pressed:
         if not ctrl_triggered:
             ctrl_triggered = True
+            if _ui_popup:
+                _ui_popup.update_text("Scraping…")
             import threading
             threading.Thread(target=type_row_strict_tabs, daemon=True).start()
+
 
 def _on_release(key):
     global ctrl_triggered
     try:
-        if key == keyboard.Key.ctrl_l or key == keyboard.Key.ctrl_r:
+        if key == keyboard.Key.ctrl_l:
+            # hide when Left Ctrl is released
+            if _ui_popup:
+                _ui_popup.hide()
+            ctrl_keys_pressed.discard(key)
+            ctrl_triggered = False
+        elif key == keyboard.Key.ctrl_r:
             ctrl_keys_pressed.discard(key)
             ctrl_triggered = False
     except Exception:
         return
+
+# start UI (popup overlay for the hotkey)
+_start_ui()
 
 # start listener in background
 listener = keyboard.Listener(on_press=_on_press, on_release=_on_release)
@@ -235,7 +337,7 @@ class Handler(BaseHTTPRequestHandler):
         return
 
     def department_decide(self, center, pi_department):
-        # Placeholder implementation - replace with actual department logic
+        # placeholder implementation - replace with actual department logic
         
 
         return pi_department
