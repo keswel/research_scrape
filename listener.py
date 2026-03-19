@@ -53,7 +53,11 @@ def serve_data_to_clipboard():
         # user requested 6 more empty tabs between target_date and submission_deadline
         cols.extend([""] * 6)
         # append submission_deadline after the added empty columns
-        cols.append(p.submission_deadline)
+        # If submission_deadline is the same as target_date, leave it blank
+        if p.submission_deadline != p.target_date:
+            cols.append(p.submission_deadline)
+        else:
+            cols.append("")
 
         row = "\t".join(cols)
         pyperclip.copy(row)
@@ -138,12 +142,11 @@ def type_row_strict_tabs():
             kbd.press(keyboard.Key.tab); kbd.release(keyboard.Key.tab)
             time.sleep(0.05)
 
-        # Q: submission_deadline
-        kbd.type(p.submission_deadline); time.sleep(0.05)
-        kbd.press(keyboard.Key.enter); kbd.release(keyboard.Key.enter)
-        time.sleep(0.05)
+        # Q: submission_deadline (skip if same as target_date)
+        q_value = "" if p.submission_deadline == p.target_date else p.submission_deadline
+        kbd.type(q_value); time.sleep(0.05)
 
-        # Restore K: move back from Q to K with 7 Shift+Tabs
+        # Restore K: move back from Q to K with 7 Shift+Tabs (stay on same row)
         for _ in range(7):
             kbd.press(keyboard.Key.shift); kbd.press(keyboard.Key.tab)
             kbd.release(keyboard.Key.tab); kbd.release(keyboard.Key.shift)
@@ -153,6 +156,14 @@ def type_row_strict_tabs():
         if k_content is not None:
             pyperclip.copy(k_content)
             kbd.press(keyboard.Key.ctrl); kbd.press('v'); kbd.release('v'); kbd.release(keyboard.Key.ctrl)
+            time.sleep(0.05)
+
+        # move down to next row and reset to column A so the next entry can start there
+        kbd.press(keyboard.Key.enter); kbd.release(keyboard.Key.enter)
+        time.sleep(0.05)
+        for _ in range(10):
+            kbd.press(keyboard.Key.shift); kbd.press(keyboard.Key.tab)
+            kbd.release(keyboard.Key.tab); kbd.release(keyboard.Key.shift)
             time.sleep(0.05)
 
         # restore user's clipboard
@@ -223,6 +234,12 @@ class Handler(BaseHTTPRequestHandler):
               )
         return
 
+    def department_decide(self, center, pi_department):
+        # Placeholder implementation - replace with actual department logic
+        
+
+        return pi_department
+
     def parse_html(self, html_data):
         try:
             #strainer = SoupStrainer(["title", "span", "input", "a", "select", "div", "h3"])
@@ -243,6 +260,12 @@ class Handler(BaseHTTPRequestHandler):
             target_date = soup.find("input", {"id": "target_date"})["value"].strip()
             submission_deadline = soup.find("input", {"id": "submission_deadline"})["value"].strip()
 
+            select = soup.find("select", {"id": "pi_center_id"})
+            selected = select.find("option", {"selected": True})
+            center = selected.text.strip() if selected else "none selected"
+            
+            pi_department = self.department_decide(center, pi_department)
+            
             global project_data
             project_data = Project(proposal_id, pi_name, pi_department, sponsor_text, target_date, submission_deadline)
             # pyperclip.copy(list(project_data)[0])
