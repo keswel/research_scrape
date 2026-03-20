@@ -8,6 +8,18 @@ import time
 import threading
 import ctypes
 import tkinter as tk
+import csv
+
+# Load department mappings
+# TODO: Add COS-specific mappings for centers like Chemistry, etc.
+ctr_to_dept = {}
+with open('department_mappings.csv', 'r') as f:
+    reader = csv.reader(f)
+    next(reader)  # skip header
+    for row in reader:
+        if len(row) >= 2:
+            ctr_to_dept[row[0].strip()] = row[1].strip()
+known_departments = set(ctr_to_dept.values())
 
 
 # guard to prevent re-entrant typing runs
@@ -125,8 +137,8 @@ def serve_data_to_clipboard():
         cols.append(p.pid)
         cols.append(p.pi_name)
         cols.append(p.pi_department)
-        # 5: department code (skip -> empty)
-        cols.append("")
+        # 5: department code
+        cols.append(p.department_code)
         # 6-7: sponsor, target_date
         cols.append(p.sponsor)
         cols.append(p.target_date)
@@ -218,8 +230,8 @@ def type_row_strict_tabs():
         type_and_tab(p.pi_name)
         # D: pi_department
         type_and_tab(p.pi_department)
-        # E: skip (just Tab)
-        kbd.press(keyboard.Key.tab); kbd.release(keyboard.Key.tab); time.sleep(0.03)
+        # E: department_code
+        type_and_tab(p.department_code)
         # F: sponsor
         type_and_tab(p.sponsor)
         # G: target_date
@@ -326,6 +338,7 @@ class Project:
     pid: str 
     pi_name: str 
     pi_department: str 
+    department_code: str
     sponsor: str 
     target_date: str 
     submission_deadline: str 
@@ -340,6 +353,7 @@ class Handler(BaseHTTPRequestHandler):
               +"\t"+p.pid
               +"\t"+p.pi_name
               +"\t"+p.pi_department
+              +"\t"+p.department_code
               +"\t"+p.sponsor
               +"\t"+p.target_date
               +"\t"+p.submission_deadline
@@ -347,10 +361,31 @@ class Handler(BaseHTTPRequestHandler):
         return
 
     def department_decide(self, center, pi_department):
-        # placeholder implementation - replace with actual department logic
+        # Handle special case for KCEID Mechanical Engineering
+        if pi_department == "KCEID Mechanical Engineering":
+            department = "KCEID"
+        else:
+            # Extract department from the first word
+            department = pi_department.split()[0] if pi_department else ""
         
-
-        return pi_department
+        # If department not in known list, default to VPR
+        if department not in known_departments:
+            department = "VPR"
+        
+        # Get department from center if available
+        center_dept = ctr_to_dept.get(center, None)
+        
+        # If center corresponds to a different department, use center's department
+        if center_dept and center_dept != department:
+            department = center_dept
+        
+        # Determine department code
+        if department in known_departments and ctr_to_dept.get(center) == department:
+            code = center
+        else:
+            code = ""
+        
+        return department, code
 
     def parse_html(self, html_data):
         try:
@@ -379,7 +414,7 @@ class Handler(BaseHTTPRequestHandler):
             pi_department = self.department_decide(center, pi_department)
             
             global project_data
-            project_data = Project(proposal_id, pi_name, pi_department, sponsor_text, target_date, submission_deadline)
+            project_data = Project(proposal_id, pi_name, pi_department[0], pi_department[1], sponsor_text, target_date, submission_deadline)
             # pyperclip.copy(list(project_data)[0])
             self.print_data(project_data)
             serve_data_to_clipboard()

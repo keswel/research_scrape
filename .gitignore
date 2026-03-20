@@ -1,3 +1,4 @@
 venv/
+department_mappings.csv
 __pycache__/
 *.pyc
