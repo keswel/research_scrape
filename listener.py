@@ -10,8 +10,21 @@ import ctypes
 import tkinter as tk
 import csv
 
-# Load department mappings
 # TODO: Add COS-specific mappings for centers like Chemistry, etc.
+
+# DEPARTMENT / CENTER DATA LOGIC:
+# if center selected, use center data (ACRONYM ONLY)
+# e.g. if department=kceid but center=COS Physics, use COS as department and its corresponding code [we can call this center override].
+
+# edge cases to be aware of. 
+#   -If the department ends up being COS (via center override or department if not center selected), then ALWAYS put COS and then in the next column put the code. 
+#   -If the department is KCEID Mechanical Engineering, use KCEID as the department and also place the corresponding code.
+#    [the code should only be used for KCEID (only 1) and COS (every)]
+#   -If the department is not in the known list and no center override, default to UNKNOWN.
+#   -If the department is being overriden by a center which is unknown, default to UNKNOWN and no code.
+
+
+# Load department mappings
 ctr_to_dept = {}
 with open('department_mappings.csv', 'r') as f:
     reader = csv.reader(f)
