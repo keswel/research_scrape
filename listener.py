@@ -33,6 +33,8 @@ with open('department_mappings.csv', 'r') as f:
         if len(row) >= 2:
             ctr_to_college[row[0].strip()] = row[1].strip()
 known_colleges = set(ctr_to_college.values())
+print(ctr_to_college.get("CTR026"))
+
 
 
 # guard to prevent re-entrant typing runs
@@ -327,38 +329,34 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def resolve_college(self, center, raw_college):
-        """
-        Determine the final College/VP Unit and Department Code given the
-        raw college string scraped from the form and the selected center.
+        print(f"[resolve_college] inputs: center={center!r}, raw_college={raw_college!r}")
 
-        Rules:
-        - KCEID Mechanical Engineering → college = "KCEID"
-        - Otherwise use the first word of raw_college as the acronym.
-        - If that acronym isn't in known_colleges, default to "VPR".
-        - If center maps to a different college, that college wins (center override).
-        - Department code is set only when a center override applies.
-        - Unknown center → college = "UNKNOWN", code = "".
-        """
         # Normalize raw college to an acronym
-        if raw_college == "KCEID Mechanical Engineering":
-            college = "KCEID"
-        else:
-            college = raw_college.split()[0] if raw_college else ""
+        college = raw_college.split()[0] if raw_college else ""
+        print(f"[resolve_college] normalized college acronym: {college!r}")
 
         if college not in known_colleges:
+            print(f"[resolve_college] {college!r} not in known_colleges, defaulting to VPR")
             college = "VPR"
 
         # Apply center override if applicable
         center_college = ctr_to_college.get(center, None)
+        print(f"[resolve_college] center_college lookup: {center!r} -> {center_college!r}")
         if center_college and center_college != college:
+            print(f"[resolve_college] center override: {college!r} -> {center_college!r}")
             college = center_college
+        else:
+            print(f"[resolve_college] no center override applied")
 
         # Department code only applies when a center maps to this college
         if college in known_colleges and ctr_to_college.get(center) == college:
             department_code = center
+        elif not (center_college and center_college != college) and raw_college == "KCEID MECH, AERO, IND EGNR":
+            department_code = "AEN004"
         else:
             department_code = ""
-
+        
+        print(f"[resolve_college] result: college={college!r}, department_code={department_code!r}")
         return college, department_code
 
     def parse_html(self, html_data):
