@@ -1,7 +1,7 @@
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import date
 from bs4 import BeautifulSoup, SoupStrainer
-from dataclasses import dataclass, astuple
+from dataclasses import dataclass
 from pynput import keyboard
 import pyperclip
 import time
@@ -12,27 +12,27 @@ import csv
 
 # TODO: Add COS-specific mappings for centers like Chemistry, etc.
 
-# DEPARTMENT / CENTER DATA LOGIC:
+# COLLEGE / CENTER DATA LOGIC:
 # if center selected, use center data (ACRONYM ONLY)
-# e.g. if department=kceid but center=COS Physics, use COS as department and its corresponding code [we can call this center override].
+# e.g. if college=kceid but center=COS Physics, use COS as college and its corresponding code [we can call this center override].
 
-# edge cases to be aware of. 
-#   -If the department ends up being COS (via center override or department if not center selected), then ALWAYS put COS and then in the next column put the code. 
-#   -If the department is KCEID Mechanical Engineering, use KCEID as the department and also place the corresponding code.
+# edge cases to be aware of.
+#   -If the college ends up being COS (via center override or college if no center selected), then ALWAYS put COS and then in the next column put the code.
+#   -If the college is KCEID Mechanical Engineering, use KCEID as the college and also place the corresponding code.
 #    [the code should only be used for KCEID (only 1) and COS (every)]
-#   -If the department is not in the known list and no center override, default to UNKNOWN.
-#   -If the department is being overriden by a center which is unknown, default to UNKNOWN and no code.
+#   -If the college is not in the known list and no center override, default to UNKNOWN.
+#   -If the college is being overridden by a center which is unknown, default to UNKNOWN and no code.
 
 
-# Load department mappings
-ctr_to_dept = {}
+# Load college mappings
+ctr_to_college = {}
 with open('department_mappings.csv', 'r') as f:
     reader = csv.reader(f)
     next(reader)  # skip header
     for row in reader:
         if len(row) >= 2:
-            ctr_to_dept[row[0].strip()] = row[1].strip()
-known_departments = set(ctr_to_dept.values())
+            ctr_to_college[row[0].strip()] = row[1].strip()
+known_colleges = set(ctr_to_college.values())
 
 
 # guard to prevent re-entrant typing runs
@@ -123,59 +123,11 @@ def _start_ui():
     threading.Thread(target=_ui_thread_main, daemon=True).start()
     _ui_ready.wait(timeout=3)
 
-def serve_data_to_clipboard():
-    """
-    Copy a single tab-separated row to the clipboard ready for Excel paste.
-
-    Column layout (1-based):
-    1: proposal date (today)
-    2: pid
-    3: pi_name
-    4: pi_department (acronym)
-    5: department code (empty)
-    6: sponsor
-    7: target_date
-    8-10: empty
-    11: submission_deadline (sponsor due date)
-    """
-    if project_data is None:
-        print("No project loaded yet")
-        return
-    try:
-        p = project_data
-        cols = []
-        # 1: proposal date
-        cols.append(date.today().strftime("%m/%d/%Y"))
-        # 2-4: pid, pi_name, pi_department
-        cols.append(p.pid)
-        cols.append(p.pi_name)
-        cols.append(p.pi_department)
-        # 5: department code
-        cols.append(p.department_code)
-        # 6-7: sponsor, target_date
-        cols.append(p.sponsor)
-        cols.append(p.target_date)
-        # ensure we have at least 10 columns (previous layout) before adding extra gaps
-        while len(cols) < 10:
-            cols.append("")
-        cols.extend([""] * 6)
-        # append submission_deadline after the added empty columns
-        # If submission_deadline is the same as target_date, leave it blank
-        if p.submission_deadline != p.target_date:
-            cols.append(p.submission_deadline)
-        else:
-            cols.append("")
-
-        row = "\t".join(cols)
-        pyperclip.copy(row)
-        print("Copied tab-separated row to clipboard (11 columns).")
-    except Exception as e:
-        print(f"Error in serve_data_to_clipboard: {e}")
 
 def type_row_strict_tabs():
     """
     Simulate genuine Tab key presses (no inserted whitespace).
-    Start with focus on column A of the target row. Hotkey: Ctrl+Alt+V
+    Start with focus on column A of the target row. Hotkey: both Ctrl keys held.
     """
     global _type_busy, _buffer_full, project_data
     # prevent re-entry
@@ -235,29 +187,29 @@ def type_row_strict_tabs():
             kbd.press(keyboard.Key.tab); kbd.release(keyboard.Key.tab)
             time.sleep(0.05)
 
-        # A: proposal date
-        type_and_tab(date.today().strftime("%m/%d/%Y"))
-        # B: pid
-        type_and_tab(p.pid)
-        # C: pi_name
+        # A: NOI Receipt
+        type_and_tab(p.noi_receipt)
+        # B: NOI #
+        type_and_tab(p.noi_number)
+        # C: PI Name
         type_and_tab(p.pi_name)
-        # D: pi_department
-        type_and_tab(p.pi_department)
-        # E: department_code
+        # D: College/VP Unit
+        type_and_tab(p.college)
+        # E: Department Code
         type_and_tab(p.department_code)
-        # F: sponsor
+        # F: Sponsor
         type_and_tab(p.sponsor)
-        # G: target_date
-        type_and_tab(p.target_date)
+        # G: Proposal Due Date
+        type_and_tab(p.proposal_due_date)
 
         # Now at H (col 8). Move to Q (col 17) by sending 9 Tabs (H->...->Q)
         for _ in range(9):
             kbd.press(keyboard.Key.tab); kbd.release(keyboard.Key.tab)
             time.sleep(0.05)
 
-        # Q: submission_deadline (skip if same as target_date)
-        q_value = "" if p.submission_deadline == p.target_date else p.submission_deadline
-        kbd.type(q_value); time.sleep(0.05)
+        # Q: Sponsor Due Date (skip if same as Proposal Due Date)
+        sponsor_due = "" if p.sponsor_due_date == p.proposal_due_date else p.sponsor_due_date
+        kbd.type(sponsor_due); time.sleep(0.05)
 
         # Restore K: move back from Q to K with 7 Shift+Tabs (stay on same row)
         for _ in range(7):
@@ -286,17 +238,18 @@ def type_row_strict_tabs():
         if _ui_popup:
             _ui_popup.update_text("Done!")
 
-        print("Typed row using real Tabs and preserved column K.")
     except Exception as e:
         print(f"Error typing/restoring row: {e}")
     finally:
         with _listener_lock:
             _type_busy = False
 
+
 # start a listener that triggers `type_row_strict_tabs` when both Ctrl keys are pressed.
 # the listener will only trigger once per press (holding the keys won't retrigger until released).
 ctrl_keys_pressed = set()
 ctrl_triggered = False
+
 
 def _on_press(key):
     global ctrl_triggered
@@ -339,6 +292,7 @@ def _on_release(key):
     except Exception:
         return
 
+
 # start UI (popup overlay for the hotkey)
 _start_ui()
 
@@ -346,92 +300,107 @@ _start_ui()
 listener = keyboard.Listener(on_press=_on_press, on_release=_on_release)
 listener.start()
 
+
 @dataclass
 class Project:
-    pid: str 
-    pi_name: str 
-    pi_department: str 
-    department_code: str
-    sponsor: str 
-    target_date: str 
-    submission_deadline: str 
+    noi_receipt: str        # Col A: today's date
+    noi_number: str         # Col B: NOI #
+    pi_name: str            # Col C: PI Name
+    college: str            # Col D: College/VP Unit
+    department_code: str    # Col E: Department Code
+    sponsor: str            # Col F: Sponsor
+    proposal_due_date: str  # Col G: Proposal Due Date
+    sponsor_due_date: str   # Col Q: Sponsor Due Date
 
-    def __iter__(self):
-        return iter(astuple(self))
 
 class Handler(BaseHTTPRequestHandler):
     def print_data(self, p):
-        print("Cleaned Data:")
-        print(date.today().strftime("%m/%d/%Y")
-              +"\t"+p.pid
-              +"\t"+p.pi_name
-              +"\t"+p.pi_department
-              +"\t"+p.department_code
-              +"\t"+p.sponsor
-              +"\t"+p.target_date
-              +"\t"+p.submission_deadline
-              )
-        return
+        print(
+            p.noi_receipt
+            + "\t" + p.noi_number
+            + "\t" + p.pi_name
+            + "\t" + p.college
+            + "\t" + p.department_code
+            + "\t" + p.sponsor
+            + "\t" + p.proposal_due_date
+            + "\t" + p.sponsor_due_date
+        )
 
-    def department_decide(self, center, pi_department):
-        # Handle special case for KCEID Mechanical Engineering
-        if pi_department == "KCEID Mechanical Engineering":
-            department = "KCEID"
+    def resolve_college(self, center, raw_college):
+        """
+        Determine the final College/VP Unit and Department Code given the
+        raw college string scraped from the form and the selected center.
+
+        Rules:
+        - KCEID Mechanical Engineering → college = "KCEID"
+        - Otherwise use the first word of raw_college as the acronym.
+        - If that acronym isn't in known_colleges, default to "VPR".
+        - If center maps to a different college, that college wins (center override).
+        - Department code is set only when a center override applies.
+        - Unknown center → college = "UNKNOWN", code = "".
+        """
+        # Normalize raw college to an acronym
+        if raw_college == "KCEID Mechanical Engineering":
+            college = "KCEID"
         else:
-            # Extract department from the first word
-            department = pi_department.split()[0] if pi_department else ""
-        
-        # If department not in known list, default to VPR
-        if department not in known_departments:
-            department = "VPR"
-        
-        # Get department from center if available
-        center_dept = ctr_to_dept.get(center, None)
-        
-        # If center corresponds to a different department, use center's department
-        if center_dept and center_dept != department:
-            department = center_dept
-        
-        # Determine department code
-        if department in known_departments and ctr_to_dept.get(center) == department:
-            code = center
+            college = raw_college.split()[0] if raw_college else ""
+
+        if college not in known_colleges:
+            college = "VPR"
+
+        # Apply center override if applicable
+        center_college = ctr_to_college.get(center, None)
+        if center_college and center_college != college:
+            college = center_college
+
+        # Department code only applies when a center maps to this college
+        if college in known_colleges and ctr_to_college.get(center) == college:
+            department_code = center
         else:
-            code = ""
-        
-        return department, code
+            department_code = ""
+
+        return college, department_code
 
     def parse_html(self, html_data):
         try:
-            #strainer = SoupStrainer(["title", "span", "input", "a", "select", "div", "h3"])
             strainer = SoupStrainer(id="intake-tab")
             soup = BeautifulSoup(html_data, features="lxml", parse_only=strainer)
 
-            proposal_id = soup.find("span", {"class": "text-primary"}).text.strip()
+            noi_number = soup.find("span", {"class": "text-primary"}).text.strip()
+
             pi_first_name = soup.find("input", {"id": "pi_first_name"})["value"].strip()
             pi_last_name = soup.find("input", {"id": "pi_last_name"})["value"].strip()
             pi_name = pi_first_name + " " + pi_last_name
-            pi_department = soup.find("input", {"id": "pi_department"})["value"].strip()
-            
+
+            raw_college = soup.find("input", {"id": "pi_department"})["value"].strip()
+
             sponsor = soup.find("a", {"class": "chosen-single"})
             sponsor_text = sponsor.find("span").text.strip()
             if sponsor_text == "Other":
                 sponsor_text = soup.find("input", {"id": "sponsor_other_part0"})["value"].strip()
-            
-            target_date = soup.find("input", {"id": "target_date"})["value"].strip()
-            submission_deadline = soup.find("input", {"id": "submission_deadline"})["value"].strip()
+
+            proposal_due_date = soup.find("input", {"id": "target_date"})["value"].strip()
+            sponsor_due_date = soup.find("input", {"id": "submission_deadline"})["value"].strip()
 
             select = soup.find("select", {"id": "pi_center_id"})
             selected = select.find("option", {"selected": True})
             center = selected.text.strip() if selected else "none selected"
-            
-            pi_department = self.department_decide(center, pi_department)
-            
+
+            college, department_code = self.resolve_college(center, raw_college)
+
             global project_data
-            project_data = Project(proposal_id, pi_name, pi_department[0], pi_department[1], sponsor_text, target_date, submission_deadline)
-            # pyperclip.copy(list(project_data)[0])
+            project_data = Project(
+                noi_receipt=date.today().strftime("%m/%d/%Y"),
+                noi_number=noi_number,
+                pi_name=pi_name,
+                college=college,
+                department_code=department_code,
+                sponsor=sponsor_text,
+                proposal_due_date=proposal_due_date,
+                sponsor_due_date=sponsor_due_date,
+            )
             self.print_data(project_data)
-            serve_data_to_clipboard()
-            # update UI if visible
+
             global _buffer_full
             _buffer_full = True
             if _ui_popup and _ui_popup._visible:
@@ -447,11 +416,11 @@ class Handler(BaseHTTPRequestHandler):
 
         self.parse_html(html_data)
 
-        # print(html_data)
         self.send_response(200)
         self.end_headers()
 
     def log_message(self, *args):
         pass
+
 
 HTTPServer(('localhost', 3000), Handler).serve_forever()
