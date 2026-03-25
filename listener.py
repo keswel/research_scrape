@@ -23,7 +23,6 @@ import csv
 #   -If the college is not in the known list and no center override, default to UNKNOWN.
 #   -If the college is being overridden by a center which is unknown, default to UNKNOWN and no code.
 
-
 # Load college mappings
 ctr_to_college = {}
 with open('department_mappings.csv', 'r') as f:
@@ -378,7 +377,7 @@ class Handler(BaseHTTPRequestHandler):
                 sponsor_text = soup.find("input", {"id": "sponsor_other_part0"})["value"].strip()
 
             proposal_due_date = soup.find("input", {"id": "target_date"})["value"].strip()
-            sponsor_due_date = soup.find("input", {"id": "submission_deadline"})["value"].strip()
+            sponsor_due_date = "Sponsor Deadline is " + soup.find("input", {"id": "submission_deadline"})["value"].strip() + ";"
 
             select = soup.find("select", {"id": "pi_center_id"})
             selected = select.find("option", {"selected": True})
