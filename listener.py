@@ -1,5 +1,7 @@
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import date
+from re import match
+import re
 from bs4 import BeautifulSoup, SoupStrainer
 from dataclasses import dataclass
 from pynput import keyboard
@@ -11,17 +13,8 @@ import tkinter as tk
 import csv
 
 # TODO: Add COS-specific mappings for centers like Chemistry, etc.
-
-# COLLEGE / CENTER DATA LOGIC:
-# if center selected, use center data (ACRONYM ONLY)
-# e.g. if college=kceid but center=COS Physics, use COS as college and its corresponding code [we can call this center override].
-
-# edge cases to be aware of.
-#   -If the college ends up being COS (via center override or college if no center selected), then ALWAYS put COS and then in the next column put the code.
-#   -If the college is KCEID Mechanical Engineering, use KCEID as the college and also place the corresponding code.
-#    [the code should only be used for KCEID (only 1) and COS (every)]
-#   -If the college is not in the known list and no center override, default to UNKNOWN.
-#   -If the college is being overridden by a center which is unknown, default to UNKNOWN and no code.
+#       Specifically, when Department is COS with no override.  
+#       A new CSV is needed with Department Names and ther corresponding center codes.
 
 # Load college mappings
 ctr_to_college = {}
@@ -32,8 +25,6 @@ with open('department_mappings.csv', 'r') as f:
         if len(row) >= 2:
             ctr_to_college[row[0].strip()] = row[1].strip()
 known_colleges = set(ctr_to_college.values())
-print(ctr_to_college.get("CTR026"))
-
 
 
 # guard to prevent re-entrant typing runs
@@ -328,34 +319,31 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def resolve_college(self, center, raw_college):
-        print(f"[resolve_college] inputs: center={center!r}, raw_college={raw_college!r}")
-
+        # print(f"[resolve_college] inputs: center={center!r}, raw_college={raw_college!r}")
         # Normalize raw college to an acronym
         college = raw_college.split()[0] if raw_college else ""
-        print(f"[resolve_college] normalized college acronym: {college!r}")
-
+        # print(f"[resolve_college] normalized college acronym: {college!r}")
         if college not in known_colleges:
-            print(f"[resolve_college] {college!r} not in known_colleges, defaulting to VPR")
+            # print(f"[resolve_college] {college!r} not in known_colleges, defaulting to VPR")
             college = "VPR"
-
-        # Apply center override if applicable
-        center_college = ctr_to_college.get(center, None)
-        print(f"[resolve_college] center_college lookup: {center!r} -> {center_college!r}")
-        if center_college and center_college != college:
-            print(f"[resolve_college] center override: {college!r} -> {center_college!r}")
-            college = center_college
-        else:
-            print(f"[resolve_college] no center override applied")
-
-        # Department code only applies when a center maps to this college
-        if college in known_colleges and ctr_to_college.get(center) == college:
-            department_code = center
-        elif not (center_college and center_college != college) and raw_college == "KCEID MECH, AERO, IND EGNR":
+        # Extract center code and apply override if it maps to a different college
+        department_code = ""
+        code_match = re.search(r"CTR[0-9]{3}", center)
+        if code_match:
+            center_code = code_match.group()
+            # print(f"[resolve_college] center code: {center_code!r}")
+            center_college = ctr_to_college.get(center_code)
+            # print(f"[resolve_college] center_college lookup: {center_code!r} -> {center_college!r}")
+            if center_college:
+                if center_college != college:
+                    # print(f"[resolve_college] center override: {college!r} -> {center_college!r}")
+                    college = center_college
+                if college == "COS":  # only COS gets a center code
+                    department_code = center_code
+        # KCEID always gets AEN004, regardless of any center override
+        if raw_college == "KCEID MECH, AERO, IND EGNR":
             department_code = "AEN004"
-        else:
-            department_code = ""
-        
-        print(f"[resolve_college] result: college={college!r}, department_code={department_code!r}")
+        # print(f"[resolve_college] result: college={college!r}, department_code={department_code!r}")
         return college, department_code
 
     def parse_html(self, html_data):
