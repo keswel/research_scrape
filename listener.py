@@ -12,9 +12,11 @@ import ctypes
 import tkinter as tk
 import csv
 
-# TODO: Add COS-specific mappings for centers like Chemistry, etc.
-#       Specifically, when Department is COS with no override.  
-#       A new CSV is needed with Department Names and ther corresponding center codes.
+# TODO: 1. Add COS-specific mappings for centers like Chemistry, etc.
+#          Specifically, when Department is COS with no override.  
+#          A new CSV is needed with Department Names and ther corresponding center codes.
+#       2. Refactor code, functions should only really have one responsibility (See, resolve_college and type_row_strict_tabs).
+
 
 # Load college mappings
 ctr_to_college = {}
@@ -170,7 +172,7 @@ def type_row_strict_tabs():
             kbd.release(keyboard.Key.tab); kbd.release(keyboard.Key.shift)
             time.sleep(0.05)
 
-        # helper: type text then Tab (uses real Tab key)
+        # helper: type text then Tab 
         def type_and_tab(text):
             if text is None:
                 text = ""
@@ -178,7 +180,7 @@ def type_row_strict_tabs():
             time.sleep(0.05)
             kbd.press(keyboard.Key.tab); kbd.release(keyboard.Key.tab)
             time.sleep(0.05)
-
+        
         # A: NOI Receipt
         type_and_tab(p.noi_receipt)
         # B: NOI #
