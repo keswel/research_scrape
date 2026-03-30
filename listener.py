@@ -16,7 +16,8 @@ import csv
 #          Specifically, when Department is COS with no override.  
 #          A new CSV is needed with Department Names and ther corresponding center codes.
 #       2. Refactor code, functions should only really have one responsibility (See, resolve_college and type_row_strict_tabs).
-
+#       3. Fix department code handling
+#          -- KCEID MECH ENG resolves to COS but with the correct code. should be KCEID <correct_code> 
 
 # Load college mappings
 ctr_to_college = {}
@@ -202,7 +203,7 @@ def type_row_strict_tabs():
             time.sleep(0.05)
 
         # Q: Sponsor Due Date (skip if same as Proposal Due Date)
-        sponsor_due = "" if p.sponsor_due_date == p.proposal_due_date else p.sponsor_due_date
+        sponsor_due = "" if p.sponsor_due_date == p.proposal_due_date else "Sponsor Deadline is " + p.sponsor_due_date + ";"
         kbd.type(sponsor_due); time.sleep(0.05)
 
         # Restore K: move back from Q to K with 7 Shift+Tabs (stay on same row)
@@ -367,7 +368,7 @@ class Handler(BaseHTTPRequestHandler):
                 sponsor_text = soup.find("input", {"id": "sponsor_other_part0"})["value"].strip()
 
             proposal_due_date = soup.find("input", {"id": "target_date"})["value"].strip()
-            sponsor_due_date = "Sponsor Deadline is " + soup.find("input", {"id": "submission_deadline"})["value"].strip() + ";"
+            sponsor_due_date = soup.find("input", {"id": "submission_deadline"})["value"].strip()
 
             select = soup.find("select", {"id": "pi_center_id"})
             selected = select.find("option", {"selected": True})
