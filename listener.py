@@ -67,6 +67,7 @@ class _PopupOverlay:
             padx=10,
             pady=4,
             font=("Segoe UI", 10, "bold"),
+            justify=tk.LEFT,  
         )
         self.label.pack()
         self._visible = False
@@ -252,8 +253,16 @@ def _on_press(key):
         if key == keyboard.Key.ctrl_l:
             # show the overlay when Left Ctrl is held (UI only, no action)
             if _ui_popup:
-                if _buffer_full:
-                    _ui_popup.show("Hold Right Ctrl to paste…")
+                if _buffer_full and project_data:
+                    p = project_data
+                    dept = f" {p.department_code}" if p.department_code else ""
+                    popup_text = (
+                        f"Hold Right Ctrl to paste…\n"
+                        f"NOI: {p.noi_number}  |  {p.pi_name}\n"
+                        f"{p.college}{dept}  |  {p.sponsor}\n"
+                        f"Due: {p.proposal_due_date}"
+                    )
+                    _ui_popup.show(popup_text)
                 else:
                     _ui_popup.show("Awaiting data…")
             ctrl_keys_pressed.add(key)
