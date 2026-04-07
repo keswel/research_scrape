@@ -409,7 +409,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers['Content-Length'])
         html_data = self.rfile.read(length).decode()
-        print(f"\n===== NEW PAGE =====")
+        print(f"\n===== PROJECT FOUND =====")
 
         self.parse_html(html_data)
 
