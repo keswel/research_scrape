@@ -19,22 +19,29 @@ import csv
 #       3. Fix department code handling
 #          -- KCEID MECH ENG resolves to COS but with the correct code. should be KCEID <correct_code> 
 
-# Load college mappings
-dept_to_name = {}
-dept_to_college = {}
+@dataclass
+class Department:
+    dept_id: str
+    dept_name: str
+    college: str
+
+
+# Load department mappings — keyed by normalized dept name, and by dept_id
+departments = {}
+departments_by_id = {}
 with open('COLLEGE_DATA.csv', 'r') as f:
     reader = csv.reader(f)
     next(reader)  # skip header
     for row in reader:
         if len(row) >= 3:
-            dept_id = row[0].strip()
-            dept_name = row[1].strip()
-            college = row[2].strip()
-            dept_to_name[dept_id] = dept_name
-            dept_to_college[dept_id] = college
-known_colleges = set(dept_to_college.values())
-for c in known_colleges:
-    print(f"Known college: {c!r}")
+            d = Department(
+                dept_id=row[0].strip(),
+                dept_name=row[1].strip(),
+                college=row[2].strip(),
+            )
+            departments[d.dept_name.upper()] = d
+            departments_by_id[d.dept_id.upper()] = d
+
 
 # guard to prevent re-entrant typing runs
 _listener_lock = threading.Lock()
@@ -336,31 +343,34 @@ class Handler(BaseHTTPRequestHandler):
             + "\t" + p.sponsor_due_date
         )
 
+    def resolve_college_name(self, college_str):
+        match college_str.upper():
+            case "SCIENCES": return "COS"
+            case "ARTS": return "COLFA"
+            case "BUSINESS": return "ACOB"
+            case "EDUCATION": return "COEHD"
+            case "CAICC": return "CAICC"
+            case "HCAP": return "HCAP"
+            case "KCEID": return "KCEID"
+            case _: return "VPR"
+
+    def resolve_college_data(self, center, raw_college):
+        if center != "NULL":
+            # prioritize center data — format is "Name - CODE" (e.g. "Urban Education Institute - CTR068")
+            code = center.rsplit(" - ", 1)[-1].strip().upper()
+            hit = departments_by_id.get(code)
+            if hit:
+                return self.resolve_college_name(hit.college), hit.dept_id
+        key = raw_college.strip().upper()
+        hit = departments.get(key)
+        if hit:
+            return self.resolve_college_name(hit.college), hit.dept_id
+        return "NULL", "NULL"
+    
     def resolve_college(self, center, raw_college):
-        print(f"[resolve_college] inputs: center={center!r}, raw_college={raw_college!r}")
-        # Normalize raw college to an acronym
-        college = raw_college.split()[0] if raw_college else ""
-        print(f"[resolve_college] normalized college acronym: {college!r}")
-        
-        if college not in known_colleges:
-            # print(f"[resolve_college] {college!r} not in known_colleges, defaulting to VPR")
-            college = "VPR"
-        # Extract center code and apply override if it maps to a different college
-        department_code = ""
-        code_match = re.search(r"CTR[0-9]{3}", center)
-        if code_match:
-            center_code = code_match.group()
-            # print(f"[resolve_college] center code: {center_code!r}")
-            center_college = ctr_to_college.get(center_code)
-            # print(f"[resolve_college] center_college lookup: {center_code!r} -> {center_college!r}")
-            if center_college:
-                if center_college != college:
-                    # print(f"[resolve_college] center override: {college!r} -> {center_college!r}")
-                    college = center_college
-                if college == "COS":  # only COS gets a center code
-                    department_code = center_code
-        # print(f"[resolve_college] result: college={college!r}, department_code={department_code!r}")
-        return college, department_code
+        # edge cases will go here
+        college_name, dept_id = self.resolve_college_data(center, raw_college)
+        return college_name, dept_id
 
     def parse_html(self, html_data):
         try:
@@ -385,7 +395,7 @@ class Handler(BaseHTTPRequestHandler):
 
             select = soup.find("select", {"id": "pi_center_id"})
             selected = select.find("option", {"selected": True})
-            center = selected.text.strip() if selected else "none selected"
+            center = selected.text.strip() if selected else "NULL"
 
             college, department_code = self.resolve_college(center, raw_college)
 
