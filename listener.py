@@ -343,6 +343,7 @@ class Handler(BaseHTTPRequestHandler):
             + "\t" + p.sponsor_due_date
         )
 
+    # Resolves the college name to a standardized abbreviation based on known mappings. Defaults to "VPR" if no match is found.
     def resolve_college_name(self, college_str):
         match college_str.upper():
             case "SCIENCES": return "COS"
@@ -354,6 +355,7 @@ class Handler(BaseHTTPRequestHandler):
             case "KCEID": return "KCEID"
             case _: return "VPR"
 
+    # Resolves the college name and department code based on center and raw college data, prioritizing center data when available. Returns a tuple of (college_name, dept_id).
     def resolve_college_data(self, center, raw_college):
         if center != "NULL":
             # prioritize center data — format is "Name - CODE" (e.g. "Urban Education Institute - CTR068")
@@ -367,10 +369,23 @@ class Handler(BaseHTTPRequestHandler):
             return self.resolve_college_name(hit.college), hit.dept_id
         return "NULL", "NULL"
     
+    # Handles resolving the college and department code based on both center and raw college data, with specific overrides for certain cases.
     def resolve_college(self, center, raw_college):
-        # edge cases will go here
         college_name, dept_id = self.resolve_college_data(center, raw_college)
-        return college_name, dept_id
+        
+        # -- CTR071 is handled by KCEID as opposed to COS in data. 
+        if dept_id == "CTR071": return "KCEID", "" 
+
+        # -- KCEID MECH, AERO, IND, EGNR needs to have its dept_id
+        if raw_college == "KCEID MECH, AERO, IND EGNR" and college_name == "KCEID":
+            return college_name, dept_id
+        
+        # -- All COS departments with no center override should be resolved to COS with the correct dept code.
+        if college_name == "COS": 
+            return college_name, dept_id
+        
+        # -- Default: if no match on center or raw college, return resolved college name (e.g. COS) with NULL code, or VPR if no match at all.
+        return college_name, ""
 
     def parse_html(self, html_data):
         try:
