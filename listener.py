@@ -20,15 +20,21 @@ import csv
 #          -- KCEID MECH ENG resolves to COS but with the correct code. should be KCEID <correct_code> 
 
 # Load college mappings
-ctr_to_college = {}
-with open('department_mappings.csv', 'r') as f:
+dept_to_name = {}
+dept_to_college = {}
+with open('COLLEGE_DATA.csv', 'r') as f:
     reader = csv.reader(f)
     next(reader)  # skip header
     for row in reader:
-        if len(row) >= 2:
-            ctr_to_college[row[0].strip()] = row[1].strip()
-known_colleges = set(ctr_to_college.values())
-
+        if len(row) >= 3:
+            dept_id = row[0].strip()
+            dept_name = row[1].strip()
+            college = row[2].strip()
+            dept_to_name[dept_id] = dept_name
+            dept_to_college[dept_id] = college
+known_colleges = set(dept_to_college.values())
+for c in known_colleges:
+    print(f"Known college: {c!r}")
 
 # guard to prevent re-entrant typing runs
 _listener_lock = threading.Lock()
@@ -331,10 +337,11 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def resolve_college(self, center, raw_college):
-        # print(f"[resolve_college] inputs: center={center!r}, raw_college={raw_college!r}")
+        print(f"[resolve_college] inputs: center={center!r}, raw_college={raw_college!r}")
         # Normalize raw college to an acronym
         college = raw_college.split()[0] if raw_college else ""
-        # print(f"[resolve_college] normalized college acronym: {college!r}")
+        print(f"[resolve_college] normalized college acronym: {college!r}")
+        
         if college not in known_colleges:
             # print(f"[resolve_college] {college!r} not in known_colleges, defaulting to VPR")
             college = "VPR"
@@ -352,9 +359,6 @@ class Handler(BaseHTTPRequestHandler):
                     college = center_college
                 if college == "COS":  # only COS gets a center code
                     department_code = center_code
-        # KCEID always gets AEN004, regardless of any center override
-        if raw_college == "KCEID MECH, AERO, IND EGNR":
-            department_code = "AEN004"
         # print(f"[resolve_college] result: college={college!r}, department_code={department_code!r}")
         return college, department_code
 
