@@ -12,13 +12,6 @@ import ctypes
 import tkinter as tk
 import csv
 
-# TODO: 1. Add COS-specific mappings for centers like Chemistry, etc.
-#          Specifically, when Department is COS with no override.  
-#          A new CSV is needed with Department Names and ther corresponding center codes.
-#       2. Refactor code, functions should only really have one responsibility (See, resolve_college and type_row_strict_tabs).
-#       3. Fix department code handling
-#          -- KCEID MECH ENG resolves to COS but with the correct code. should be KCEID <correct_code> 
-
 @dataclass
 class Department:
     dept_id: str
