@@ -41,21 +41,25 @@ def fetch_proposal(session_id, pid):
     else:
         print(f"Failed to fetch PID {pid}: {r.status_code}")
 
-# Load department mappings — keyed by normalized dept name, and by dept_id
 departments = {}
 departments_by_id = {}
-with open('COLLEGE_DATA.csv', 'r') as f:
-    reader = csv.reader(f)
-    next(reader)  # skip header
-    for row in reader:
-        if len(row) >= 3:
-            d = Department(
-                dept_id=row[0].strip(),
-                dept_name=row[1].strip(),
-                college=row[2].strip(),
-            )
-            departments[d.dept_name.upper()] = d
-            departments_by_id[d.dept_id.upper()] = d
+
+def load_departments(path='COLLEGE_DATA.csv'):
+    global departments, departments_by_id
+    departments = {}
+    departments_by_id = {}
+    with open(path, 'r') as f:
+        reader = csv.reader(f)
+        next(reader)  # skip header
+        for row in reader:
+            if len(row) >= 3:
+                d = Department(
+                    dept_id=row[0].strip(),
+                    dept_name=row[1].strip(),
+                    college=row[2].strip(),
+                )
+                departments[d.dept_name.upper()] = d
+                departments_by_id[d.dept_id.upper()] = d
 
 
 # guard to prevent re-entrant typing runs
@@ -439,6 +443,8 @@ def parse_html(html_data):
 
 
 if __name__ == "__main__":
+    load_departments('COLLEGE_DATA.csv')
+
     session_id = get_session_id()
     if session_id is None:
         raise SystemExit(1)
