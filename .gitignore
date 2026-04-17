@@ -3,3 +3,4 @@ department_mappings.csv
 __pycache__/
 *.pyc
 COLLEGE_DATA.csv
+*.stackdump

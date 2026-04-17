@@ -1,7 +1,5 @@
-from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import date
-from re import match
-import re
+import requests
 from bs4 import BeautifulSoup, SoupStrainer
 from dataclasses import dataclass
 from pynput import keyboard
@@ -11,6 +9,7 @@ import threading
 import ctypes
 import tkinter as tk
 import csv
+import subprocess
 
 @dataclass
 class Department:
@@ -18,6 +17,29 @@ class Department:
     dept_name: str
     college: str
 
+def get_session_id():
+    result = subprocess.run(
+        ["powershell", "-File", "./get-session.ps1"],
+        capture_output=True, text=True
+    )
+    for line in result.stdout.splitlines():
+        if line.startswith("PHPSESSID:"):
+            return line.split(":", 1)[1].strip()
+    print("Failed to get session ID")
+    print(result.stderr)
+    return None
+
+def fetch_proposal(session_id, pid):
+    url = f"https://dawson2.utsarr.net/comal/osp/pages/proposal.php?pid={pid}"
+    headers = {
+        "Referer": "https://dawson2.utsarr.net/comal/osp/pages/search_proposal.php?id=0",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36",
+    }
+    r = requests.get(url, cookies={"PHPSESSID": session_id}, headers=headers)
+    if r.status_code == 200:
+        parse_html(r.text)
+    else:
+        print(f"Failed to fetch PID {pid}: {r.status_code}")
 
 # Load department mappings — keyed by normalized dept name, and by dept_id
 departments = {}
@@ -80,7 +102,6 @@ class _PopupOverlay:
 
     def _move_to_cursor(self):
         x, y = _get_cursor_pos()
-        # place slightly above and to the right of the cursor
         self.window.geometry(f"+{x+10}+{y-30}")
 
     def show(self, text="Scraping..."):
@@ -89,13 +110,11 @@ class _PopupOverlay:
             self._move_to_cursor()
             self.window.deiconify()
             self._visible = True
-
         self.root.after(0, _show)
 
     def update_text(self, text):
         def _update():
             self.label.config(text=text)
-
         self.root.after(0, _update)
 
     def hide(self):
@@ -103,9 +122,7 @@ class _PopupOverlay:
             if self._visible:
                 self.window.withdraw()
                 self._visible = False
-
         self.root.after(0, _hide)
-
 
 _ui_ready = threading.Event()
 
@@ -303,14 +320,6 @@ def _on_release(key):
         return
 
 
-# start UI (popup overlay for the hotkey)
-_start_ui()
-
-# start listener in background
-listener = keyboard.Listener(on_press=_on_press, on_release=_on_release)
-listener.start()
-
-
 @dataclass
 class Project:
     noi_receipt: str        # Col A: today's date
@@ -323,123 +332,125 @@ class Project:
     sponsor_due_date: str   # Col Q: Sponsor Due Date
 
 
-class Handler(BaseHTTPRequestHandler):
-    def print_data(self, p):
-        print(
-            p.noi_receipt
-            + "\t" + p.noi_number
-            + "\t" + p.pi_name
-            + "\t" + p.college
-            + "\t" + p.department_code
-            + "\t" + p.sponsor
-            + "\t" + p.proposal_due_date
-            + "\t" + p.sponsor_due_date
-        )
+def print_data(p):
+    print(
+        p.noi_receipt
+        + "\t" + p.noi_number
+        + "\t" + p.pi_name
+        + "\t" + p.college
+        + "\t" + p.department_code
+        + "\t" + p.sponsor
+        + "\t" + p.proposal_due_date
+        + "\t" + p.sponsor_due_date
+    )
 
-    # Resolves the college name to a standardized abbreviation based on known mappings. Defaults to "VPR" if no match is found.
-    def resolve_college_name(self, college_str):
-        match college_str.upper():
-            case "SCIENCES": return "COS"
-            case "ARTS": return "COLFA"
-            case "BUSINESS": return "ACOB"
-            case "EDUCATION": return "COEHD"
-            case "CAICC": return "CAICC"
-            case "HCAP": return "HCAP"
-            case "KCEID": return "KCEID"
-            case _: return "VPR"
+# Resolves the college name to a standardized abbreviation based on known mappings. Defaults to "VPR" if no match is found.
+def resolve_college_name(college_str):
+    match college_str.upper():
+        case "SCIENCES": return "COS"
+        case "ARTS": return "COLFA"
+        case "BUSINESS": return "ACOB"
+        case "EDUCATION": return "COEHD"
+        case "CAICC": return "CAICC"
+        case "HCAP": return "HCAP"
+        case "KCEID": return "KCEID"
+        case _: return "VPR"
 
-    # Resolves the college name and department code based on center and raw college data, prioritizing center data when available. Returns a tuple of (college_name, dept_id).
-    def resolve_college_data(self, center, raw_college):
-        if center != "NULL":
-            # prioritize center data — format is "Name - CODE" (e.g. "Urban Education Institute - CTR068")
-            code = center.rsplit(" - ", 1)[-1].strip().upper()
-            hit = departments_by_id.get(code)
-            if hit:
-                return self.resolve_college_name(hit.college), hit.dept_id
-        key = raw_college.strip().upper()
-        hit = departments.get(key)
+# Resolves the college name and department code based on center and raw college data, prioritizing center data when available. Returns a tuple of (college_name, dept_id).
+def resolve_college_data(center, raw_college):
+    if center != "NULL":
+        # prioritize center data — format is "Name - CODE" (e.g. "Urban Education Institute - CTR068")
+        code = center.rsplit(" - ", 1)[-1].strip().upper()
+        hit = departments_by_id.get(code)
         if hit:
-            return self.resolve_college_name(hit.college), hit.dept_id
-        return "NULL", "NULL"
+            return resolve_college_name(hit.college), hit.dept_id
+    key = raw_college.strip().upper()
+    hit = departments.get(key)
+    if hit:
+        return resolve_college_name(hit.college), hit.dept_id
+    return "NULL", "NULL"
+
+# Handles resolving the college and department code based on both center and raw college data, with specific overrides for certain cases.
+def resolve_college(center, raw_college):
+    college_name, dept_id = resolve_college_data(center, raw_college)
     
-    # Handles resolving the college and department code based on both center and raw college data, with specific overrides for certain cases.
-    def resolve_college(self, center, raw_college):
-        college_name, dept_id = self.resolve_college_data(center, raw_college)
-        
-        # -- CTR071 is handled by KCEID as opposed to COS in data. 
-        if dept_id == "CTR071": return "KCEID", "" 
+    # -- CTR071 is handled by KCEID as opposed to COS in data. 
+    if dept_id == "CTR071": return "KCEID", "" 
 
-        # -- KCEID MECH, AERO, IND, EGNR needs to have its dept_id
-        if raw_college == "KCEID MECH, AERO, IND EGNR" and college_name == "KCEID":
-            return college_name, dept_id
-        
-        # -- All COS departments with no center override should be resolved to COS with the correct dept code.
-        if college_name == "COS": 
-            return college_name, dept_id
-        
-        # -- Default: if no match on center or raw college, return resolved college name (e.g. COS) with NULL code, or VPR if no match at all.
-        return college_name, ""
+    # -- KCEID MECH, AERO, IND, EGNR needs to have its dept_id
+    if raw_college == "KCEID MECH, AERO, IND EGNR" and college_name == "KCEID":
+        return college_name, dept_id
+    
+    # -- All COS departments with no center override should be resolved to COS with the correct dept code.
+    if college_name == "COS": 
+        return college_name, dept_id
+    
+    # -- Default: if no match on center or raw college, return resolved college name (e.g. COS) with NULL code, or VPR if no match at all.
+    return college_name, ""
 
-    def parse_html(self, html_data):
-        try:
-            strainer = SoupStrainer(id="intake-tab")
-            soup = BeautifulSoup(html_data, features="lxml", parse_only=strainer)
+def parse_html(html_data):
+    try:
+        strainer = SoupStrainer(id="intake-tab")
+        soup = BeautifulSoup(html_data, features="lxml", parse_only=strainer)
 
-            noi_number = soup.find("span", {"class": "text-primary"}).text.strip()
+        noi_number = soup.find("span", {"class": "text-primary"}).text.strip()
 
-            pi_first_name = soup.find("input", {"id": "pi_first_name"})["value"].strip()
-            pi_last_name = soup.find("input", {"id": "pi_last_name"})["value"].strip()
-            pi_name = pi_first_name + " " + pi_last_name
+        pi_first_name = soup.find("input", {"id": "pi_first_name"})["value"].strip()
+        pi_last_name = soup.find("input", {"id": "pi_last_name"})["value"].strip()
+        pi_name = pi_first_name + " " + pi_last_name
 
-            raw_college = soup.find("input", {"id": "pi_department"})["value"].strip()
+        raw_college = soup.find("input", {"id": "pi_department"})["value"].strip()
 
-            sponsor = soup.find("a", {"class": "chosen-single"})
-            sponsor_text = sponsor.find("span").text.strip()
-            if sponsor_text == "Other":
-                sponsor_text = soup.find("input", {"id": "sponsor_other_part0"})["value"].strip()
+        sponsor_select = soup.find("select", {"id": "sponsor_id_part0"})
+        sponsor_selected = sponsor_select.find("option", {"selected": True}) if sponsor_select else None
+        sponsor_text = sponsor_selected.text.strip() if sponsor_selected else ""
+        if sponsor_text == "Other":
+            sponsor_text = soup.find("input", {"id": "sponsor_other_part0"})["value"].strip()
 
-            proposal_due_date = soup.find("input", {"id": "target_date"})["value"].strip()
-            sponsor_due_date = soup.find("input", {"id": "submission_deadline"})["value"].strip()
+        proposal_due_date = soup.find("input", {"id": "target_date"})["value"].strip()
+        sponsor_due_date = soup.find("input", {"id": "submission_deadline"})["value"].strip()
 
-            select = soup.find("select", {"id": "pi_center_id"})
-            selected = select.find("option", {"selected": True})
-            center = selected.text.strip() if selected else "NULL"
+        select = soup.find("select", {"id": "pi_center_id"})
+        selected = select.find("option", {"selected": True})
+        center = selected.text.strip() if selected else "NULL"
 
-            college, department_code = self.resolve_college(center, raw_college)
+        college, department_code = resolve_college(center, raw_college)
 
-            global project_data
-            project_data = Project(
-                noi_receipt=date.today().strftime("%m/%d/%Y"),
-                noi_number=noi_number,
-                pi_name=pi_name,
-                college=college,
-                department_code=department_code,
-                sponsor=sponsor_text,
-                proposal_due_date=proposal_due_date,
-                sponsor_due_date=sponsor_due_date,
-            )
-            self.print_data(project_data)
+        global project_data
+        project_data = Project(
+            noi_receipt=date.today().strftime("%m/%d/%Y"),
+            noi_number=noi_number,
+            pi_name=pi_name,
+            college=college,
+            department_code=department_code,
+            sponsor=sponsor_text,
+            proposal_due_date=proposal_due_date,
+            sponsor_due_date=sponsor_due_date,
+        )
+        print_data(project_data)
 
-            global _buffer_full
-            _buffer_full = True
-            if _ui_popup and _ui_popup._visible:
-                _ui_popup.update_text("Hold Right Ctrl to paste…")
+        global _buffer_full
+        _buffer_full = True
+        if _ui_popup and _ui_popup._visible:
+            _ui_popup.update_text("Hold Right Ctrl to paste…")
 
-        except Exception as e:
-            print(f"Error parsing HTML: {e}")
-
-    def do_POST(self):
-        length = int(self.headers['Content-Length'])
-        html_data = self.rfile.read(length).decode()
-        print(f"\n===== PROJECT FOUND =====")
-
-        self.parse_html(html_data)
-
-        self.send_response(200)
-        self.end_headers()
-
-    def log_message(self, *args):
-        pass
+    except Exception as e:
+        print(f"Error parsing HTML: {e}")
 
 
-HTTPServer(('localhost', 3000), Handler).serve_forever()
+if __name__ == "__main__":
+    session_id = get_session_id()
+    if session_id is None:
+        raise SystemExit(1)
+
+    _start_ui()
+
+    listener = keyboard.Listener(on_press=_on_press, on_release=_on_release)
+    listener.start()
+
+    while True:
+        pid = input("Enter PID (q to quit): ").strip()
+        if pid.lower() == "q":
+            break
+        fetch_proposal(session_id, pid)
+

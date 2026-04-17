@@ -37,7 +37,9 @@ if (-not $ticketUrl) {
 }
 
 $appSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-$appResponse = Invoke-WebRequest -Uri $ticketUrl -SessionVariable appSession -MaximumRedirection 0 -ErrorAction SilentlyContinue -UseBasicParsing
+# follow the full redirect chain (ticket validation -> cas_login.php -> admin_home.php)
+# so PHP finishes session regeneration and authorizes the OSP area
+$appResponse = Invoke-WebRequest -Uri $ticketUrl -SessionVariable appSession -UseBasicParsing
 
 $PHPSESSID = ($appSession.Cookies.GetCookies("https://dawson2.utsarr.net") | Where-Object { $_.Name -eq "PHPSESSID" }).Value
 
