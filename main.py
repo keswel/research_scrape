@@ -337,16 +337,24 @@ class Project:
 
 
 def print_data(p):
-    print(
-        p.noi_receipt
-        + "\t" + p.noi_number
-        + "\t" + p.pi_name
-        + "\t" + p.college
-        + "\t" + p.department_code
-        + "\t" + p.sponsor
-        + "\t" + p.proposal_due_date
-        + "\t" + p.sponsor_due_date
-    )
+    rows = [
+        ("A", "NOI Receipt",        p.noi_receipt),
+        ("B", "NOI #",              p.noi_number),
+        ("C", "PI Name",            p.pi_name),
+        ("D", "College",            p.college),
+        ("E", "Department Code",    p.department_code),
+        ("F", "Sponsor",            p.sponsor),
+        ("G", "Proposal Due",       p.proposal_due_date),
+        ("Q", "Sponsor Due",        p.sponsor_due_date),
+    ]
+    label_w = max(len(label) for _, label, _ in rows)
+    value_w = max(len(str(val)) for _, _, val in rows)
+    lines = [f" {col}  {label:<{label_w}}  {str(val):<{value_w}} " for col, label, val in rows]
+    width = len(lines[0])
+    print("┌" + "─" * width + "┐")
+    for line in lines:
+        print("│" + line + "│")
+    print("└" + "─" * width + "┘")
 
 # Resolves the college name to a standardized abbreviation based on known mappings. Defaults to "VPR" if no match is found.
 def resolve_college_name(college_str):
@@ -377,19 +385,20 @@ def resolve_college_data(center, raw_college):
 # Handles resolving the college and department code based on both center and raw college data, with specific overrides for certain cases.
 def resolve_college(center, raw_college):
     college_name, dept_id = resolve_college_data(center, raw_college)
-    
-    # -- CTR071 is handled by KCEID as opposed to COS in data. 
-    if dept_id == "CTR071": return "KCEID", "" 
 
-    # -- KCEID MECH, AERO, IND, EGNR needs to have its dept_id
-    if raw_college == "KCEID MECH, AERO, IND EGNR" and college_name == "KCEID":
+    # -- CTR011 and CTR071 are handled by KCEID as opposed to COS in data.
+    if dept_id in ("CTR011", "CTR071"):
+        return "KCEID", ""
+
+    # -- COS keeps its dept code.
+    if college_name == "COS":
         return college_name, dept_id
-    
-    # -- All COS departments with no center override should be resolved to COS with the correct dept code.
-    if college_name == "COS": 
+
+    # -- Edge case: "KCEID MECH, AERO, IND EGNR" with no center override keeps
+    # its own dept_id (from the raw_college row).
+    if center == "NULL" and raw_college.strip().upper() == "KCEID MECH, AERO, IND EGNR":
         return college_name, dept_id
-    
-    # -- Default: if no match on center or raw college, return resolved college name (e.g. COS) with NULL code, or VPR if no match at all.
+
     return college_name, ""
 
 def parse_html(html_data):
