@@ -336,11 +336,13 @@ class Project:
     sponsor_due_date: str   # Col Q: Sponsor Due Date
 
 
-def print_data(p):
+def print_data(p, raw_college=None, center=None):
     rows = [
         ("A", "NOI Receipt",        p.noi_receipt),
         ("B", "NOI #",              p.noi_number),
         ("C", "PI Name",            p.pi_name),
+        ("-", "Orig. College",      raw_college if raw_college is not None else ""),
+        ("-", "Orig. Center",       center if center is not None else ""),
         ("D", "College",            p.college),
         ("E", "Department Code",    p.department_code),
         ("F", "Sponsor",            p.sponsor),
@@ -440,7 +442,7 @@ def parse_html(html_data):
             proposal_due_date=proposal_due_date,
             sponsor_due_date=sponsor_due_date,
         )
-        print_data(project_data)
+        print_data(project_data, raw_college=raw_college, center=center)
 
         global _buffer_full
         _buffer_full = True
