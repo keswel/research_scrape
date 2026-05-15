@@ -401,6 +401,9 @@ def resolve_college(center, raw_college):
     if center == "NULL" and raw_college.strip().upper() == "KCEID MECH, AERO, IND EGNR":
         return college_name, dept_id
 
+    if center == "NULL" and raw_college == "NULL":
+        print("Center & Raw College are NULL. Double check data.")
+
     return college_name, ""
 
 def parse_html(html_data):
