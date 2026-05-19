@@ -3,7 +3,6 @@ import requests
 from bs4 import BeautifulSoup, SoupStrainer
 from dataclasses import dataclass
 from pynput import keyboard
-import pyperclip
 import time
 import threading
 import ctypes
@@ -72,6 +71,77 @@ _ui_popup = None
 
 # tracks if data has been scraped and is ready for pasting
 _buffer_full = False
+
+
+# ---------- Low-level keyboard hook: blocks physical input on demand ----------
+# WH_KEYBOARD_LL doesn't require admin. The hook callback inspects the
+# LLKHF_INJECTED flag so our own pynput-synthesized keys still get through.
+from ctypes import wintypes
+
+_WH_KEYBOARD_LL = 13
+_HC_ACTION = 0
+_LLKHF_INJECTED = 0x10
+
+class _KBDLLHOOKSTRUCT(ctypes.Structure):
+    _fields_ = [
+        ("vkCode", wintypes.DWORD),
+        ("scanCode", wintypes.DWORD),
+        ("flags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", ctypes.c_void_p),
+    ]
+
+_LowLevelKeyboardProc = ctypes.WINFUNCTYPE(
+    ctypes.c_long, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM
+)
+
+_user32 = ctypes.WinDLL("user32", use_last_error=True)
+_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_user32.SetWindowsHookExW.argtypes = [
+    ctypes.c_int, _LowLevelKeyboardProc, wintypes.HINSTANCE, wintypes.DWORD,
+]
+_user32.SetWindowsHookExW.restype = wintypes.HHOOK
+_user32.CallNextHookEx.argtypes = [
+    wintypes.HHOOK, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM,
+]
+_user32.CallNextHookEx.restype = ctypes.c_long
+_user32.GetMessageW.argtypes = [
+    ctypes.c_void_p, wintypes.HWND, wintypes.UINT, wintypes.UINT,
+]
+_user32.GetMessageW.restype = ctypes.c_int
+_kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+_kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+
+_input_block_active = threading.Event()
+_kbd_hook_proc_ref = None  # keep alive — Windows holds a raw pointer
+
+
+def _ll_keyboard_hook_thread():
+    global _kbd_hook_proc_ref
+
+    def _proc(nCode, wParam, lParam):
+        if nCode == _HC_ACTION and _input_block_active.is_set():
+            kb = ctypes.cast(lParam, ctypes.POINTER(_KBDLLHOOKSTRUCT)).contents
+            if not (kb.flags & _LLKHF_INJECTED):
+                return 1  # swallow real key
+        return _user32.CallNextHookEx(None, nCode, wParam, lParam)
+
+    _kbd_hook_proc_ref = _LowLevelKeyboardProc(_proc)
+    hook_handle = _user32.SetWindowsHookExW(
+        _WH_KEYBOARD_LL, _kbd_hook_proc_ref,
+        _kernel32.GetModuleHandleW(None), 0,
+    )
+    if not hook_handle:
+        print(f"Low-level keyboard hook failed: {ctypes.get_last_error()}")
+        return
+    # LL hooks need a message pump on the installing thread.
+    msg = wintypes.MSG()
+    while _user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+        pass
+
+
+def _start_input_blocker():
+    threading.Thread(target=_ll_keyboard_hook_thread, daemon=True).start()
 
 
 def _get_cursor_pos():
@@ -169,9 +239,13 @@ def type_row_strict_tabs():
         project_data = None
         if _ui_popup and _ui_popup._visible:
             _ui_popup.update_text("Awaiting data…")
-        # ensure Alt isn't held (prevents Alt+Tab when we send Tabs)
+        # ensure Alt/Ctrl/Shift aren't held (prevents Alt+Tab, Ctrl+Tab, etc.)
         try:
-            for ak in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r):
+            for ak in (
+                keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r,
+                keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r,
+                keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r,
+            ):
                 try:
                     kbd.release(ak)
                 except Exception:
@@ -180,28 +254,11 @@ def type_row_strict_tabs():
         except Exception:
             pass
 
-        # save current clipboard
-        try:
-            old_clip = pyperclip.paste()
-        except Exception:
-            old_clip = None
+        # suppress physical keyboard input for the duration of typing.
+        # Our synthesized keys pass through (LL hook checks LLKHF_INJECTED).
+        _input_block_active.set()
 
-        # go to K (10 Tabs from A) and copy it
-        for _ in range(10):
-            kbd.press(keyboard.Key.tab); kbd.release(keyboard.Key.tab)
-            time.sleep(0.05)
-        # Ctrl+C to copy K
-        kbd.press(keyboard.Key.ctrl); kbd.press('c'); kbd.release('c'); kbd.release(keyboard.Key.ctrl)
-        time.sleep(0.12)
-        k_content = pyperclip.paste()
-
-        # return to A (10 Shift+Tabs)
-        for _ in range(10):
-            kbd.press(keyboard.Key.shift); kbd.press(keyboard.Key.tab)
-            kbd.release(keyboard.Key.tab); kbd.release(keyboard.Key.shift)
-            time.sleep(0.05)
-
-        # helper: type text then Tab 
+        # helper: type text then Tab
         def type_and_tab(text):
             if text is None:
                 text = ""
@@ -234,18 +291,6 @@ def type_row_strict_tabs():
         sponsor_due = "" if p.sponsor_due_date == p.proposal_due_date else "Sponsor Deadline is " + p.sponsor_due_date + ";"
         kbd.type(sponsor_due); time.sleep(0.05)
 
-        # Restore K: move back from Q to K with 7 Shift+Tabs (stay on same row)
-        for _ in range(7):
-            kbd.press(keyboard.Key.shift); kbd.press(keyboard.Key.tab)
-            kbd.release(keyboard.Key.tab); kbd.release(keyboard.Key.shift)
-            time.sleep(0.05)
-
-        # paste saved K content (Ctrl+V)
-        if k_content is not None:
-            pyperclip.copy(k_content)
-            kbd.press(keyboard.Key.ctrl); kbd.press('v'); kbd.release('v'); kbd.release(keyboard.Key.ctrl)
-            time.sleep(0.05)
-
         # move down to next row and reset to column A so the next entry can start there
         kbd.press(keyboard.Key.enter); kbd.release(keyboard.Key.enter)
         time.sleep(0.05)
@@ -254,16 +299,13 @@ def type_row_strict_tabs():
             kbd.release(keyboard.Key.tab); kbd.release(keyboard.Key.shift)
             time.sleep(0.05)
 
-        # restore user's clipboard
-        if old_clip is not None:
-            pyperclip.copy(old_clip)
-
         if _ui_popup:
             _ui_popup.update_text("Done!")
 
     except Exception as e:
         print(f"Error typing/restoring row: {e}")
     finally:
+        _input_block_active.clear()
         with _listener_lock:
             _type_busy = False
 
@@ -304,7 +346,6 @@ def _on_press(key):
             ctrl_triggered = True
             if _ui_popup:
                 _ui_popup.update_text("Scraping…")
-            import threading
             threading.Thread(target=type_row_strict_tabs, daemon=True).start()
 
 
@@ -464,6 +505,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     _start_ui()
+    _start_input_blocker()
 
     listener = keyboard.Listener(on_press=_on_press, on_release=_on_release)
     listener.start()
