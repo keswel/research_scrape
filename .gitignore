@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 COLLEGE_DATA.csv
 *.stackdump
+.claude
