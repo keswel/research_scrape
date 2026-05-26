@@ -34,7 +34,12 @@ def fetch_proposal(session_id, pid):
         "Referer": "https://dawson2.utsarr.net/comal/osp/pages/search_proposal.php?id=0",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36",
     }
-    r = requests.get(url, cookies={"PHPSESSID": session_id}, headers=headers)
+    try:
+        r = requests.get(url, cookies={"PHPSESSID": session_id}, headers=headers, timeout=30)
+    except requests.RequestException as e:
+        print(f"Could not reach the server for PID {pid}. Check your connection and try again.")
+        print(f"  (details: {e})")
+        return
     if r.status_code == 200:
         parse_html(r.text)
     else:
@@ -231,6 +236,11 @@ def type_row_strict_tabs():
         _type_busy = True
     try:
         p = project_data
+        if p is None or not _buffer_full:
+            # nothing scraped yet — bail before blocking input or typing a partial row
+            if _ui_popup:
+                _ui_popup.update_text("No data yet — scrape a PID first")
+            return
         kbd = keyboard.Controller()
         if _ui_popup:
             _ui_popup.show("Scraping...")
@@ -344,9 +354,12 @@ def _on_press(key):
     if keyboard.Key.ctrl_l in ctrl_keys_pressed and keyboard.Key.ctrl_r in ctrl_keys_pressed:
         if not ctrl_triggered:
             ctrl_triggered = True
-            if _ui_popup:
-                _ui_popup.update_text("Scraping…")
-            threading.Thread(target=type_row_strict_tabs, daemon=True).start()
+            if _buffer_full and project_data:
+                if _ui_popup:
+                    _ui_popup.update_text("Pasting…")
+                threading.Thread(target=type_row_strict_tabs, daemon=True).start()
+            elif _ui_popup:
+                _ui_popup.update_text("No data yet — scrape a PID first")
 
 
 def _on_release(key):
@@ -514,5 +527,10 @@ if __name__ == "__main__":
         pid = input("Enter PID (q to quit): ").strip()
         if pid.lower() == "q":
             break
+        if not pid:
+            continue
+        if not pid.isdigit():
+            print("PID must be a number. Try again.")
+            continue
         fetch_proposal(session_id, pid)
 
