@@ -1,7 +1,45 @@
+# --- Secrets / credentials ---
+.env
+.env.*
+*.env
+secrets.json
+credentials.json
+*.key
+*.pem
+
+# --- Python ---
 venv/
-department_mappings.csv
+.venv/
+env/
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# --- PyInstaller build output ---
+build/
+dist/
+*.spec
+
+# --- Project data files ---
 COLLEGE_DATA.csv
+department_mappings.csv
+
+# --- Logs / crash dumps ---
+*.log
 *.stackdump
-.claude
+
+# --- IDE / editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Claude / tooling ---
+.claude/
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+desktop.ini

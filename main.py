@@ -9,6 +9,16 @@ import ctypes
 import tkinter as tk
 import csv
 import subprocess
+import sys
+import os
+
+
+def resource_path(relative):
+    """Resolve a bundled data file. When frozen by PyInstaller the files are
+    extracted to sys._MEIPASS; otherwise they sit next to this script."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, relative)
+
 
 @dataclass
 class Department:
@@ -18,10 +28,12 @@ class Department:
 
 def get_session_id():
     result = subprocess.run(
-        ["powershell", "-File", "./get-session.ps1"],
+        ["powershell", "-ExecutionPolicy", "Bypass", "-File", resource_path("get-session.ps1")],
         capture_output=True, text=True
     )
     for line in result.stdout.splitlines():
+        if line.strip() == "QUIT":
+            return "__QUIT__"
         if line.startswith("PHPSESSID:"):
             return line.split(":", 1)[1].strip()
     print("Failed to get session ID")
@@ -510,10 +522,39 @@ def parse_html(html_data):
         print(f"Error parsing HTML: {e}")
 
 
+_BANNER = [
+    "             _          ____        __",
+    "  ___  ___  (_)______  / / /__ ____/ /____  ____",
+    " / _ \\/ _ \\/ / __/ _ \\/ / / -_) __/ __/ _ \\/ __/",
+    "/_//_/\\___/_/\\__/\\___/_/_/\\__/\\__/\\__/\\___/_/",
+]
+
+
+def print_banner():
+    width = max(len(line) for line in _BANNER)
+    print()
+    print("\n".join(_BANNER))
+    print()
+    print("Enter your UTSA Login".center(width))
+    print()
+    sys.stdout.flush()
+
+
 if __name__ == "__main__":
-    load_departments('COLLEGE_DATA.csv')
+    # Give the app its own taskbar identity (distinct icon/grouping) rather than
+    # being lumped in with generic python/console-host entries.
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("UTSA.NOICollector")
+    except Exception:
+        pass
+
+    print_banner()
+    load_departments(resource_path('COLLEGE_DATA.csv'))
 
     session_id = get_session_id()
+    if session_id == "__QUIT__":
+        print("Goodbye!")
+        raise SystemExit(0)
     if session_id is None:
         raise SystemExit(1)
 

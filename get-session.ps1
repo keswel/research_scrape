@@ -3,8 +3,12 @@ $LOGIN_URL = "https://sso-cas.it.utsa.edu/cas/login?service=https%3A%2F%2Fdawson
 $PHPSESSID = $null
 
 while (-not $PHPSESSID) {
-    # Prompt for credentials
-    $USERNAME = Read-Host "Username"
+    # Prompt for credentials (type q to quit)
+    $USERNAME = Read-Host "Username (or type q to quit)"
+    if ($USERNAME -in @('q', 'Q', 'quit', 'exit')) {
+        Write-Host "QUIT"
+        exit
+    }
     $PASSWORD = Read-Host "Password" -AsSecureString
     $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($PASSWORD)
     $PLAIN_PASSWORD = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
